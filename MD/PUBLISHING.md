@@ -26,7 +26,7 @@ the development manifest, so the unpacked extension keeps working.
 1. The support address in `docs/privacy-policy.html` and `docs/index.html` is shivamsahaniii17@gmail.com.
 2. Push to GitHub, then in the repository: **Settings → Pages → Deploy from a branch → `main` / `/docs`**. (Free GitHub Pages needs a
    public repository; otherwise host the single HTML file anywhere.)
-3. The policy is then at `https://<user>.github.io/Pramana/privacy-policy.html`.
+3. The site is <https://shivamsahaniii.github.io/Pramana/>; the policy is <https://shivamsahaniii.github.io/Pramana/privacy-policy.html>. In Google Cloud Branding, the authorized domain is `shivamsahaniii.github.io`.
 
 ## 4. Create the store item (draft)
 
