@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { detectOS, shortcutLabels } from '../shared/platform';
 import type { OS } from '../shared/platform';
 import { UBUNTU_COMMANDS } from './ubuntuCommands';
+import { MAX_RECORDING_MINUTES } from '../shared/limits';
 
 
 function Command({ text }: { text: string }) {
@@ -46,7 +47,39 @@ export function Help() {
         </a>
       </header>
 
-      <section className="help-section">
+      <section className="help-section" id="help-capture">
+        <h2>Screenshots</h2>
+        <p>
+          <strong>Visible Tab</strong> captures what you see now. <strong>Select Area</strong> lets you drag around one part.{' '}
+          <strong>Full Page</strong> scrolls through the page for you and joins every screen into one tall image, top to bottom.
+        </p>
+        <p>
+          During a full-page capture the Pramana icon counts the screens (for example 3/8). Chrome allows two screenshots a second, so a
+          long page takes a few seconds; press <kbd>Esc</kbd> to cancel. Menus and banners that stay in place while you scroll are
+          captured once instead of on every screen. A page that keeps loading more as you scroll is captured up to its length when you
+          started, and an extremely long page stops where the image reaches the largest size Chrome can hold.
+        </p>
+        <p>
+          In the editor, <strong>Text size</strong> appears with the Text tool: use <strong>A−</strong> and <strong>A+</strong> or the
+          slider. It also resizes text you already placed: pick it with the Select tool first.
+        </p>
+      </section>
+
+      <section className="help-section" id="help-folder">
+        <h2>Where your captures are saved</h2>
+        <p>
+          Everything goes to one folder in your Google Drive, <strong>Pramana</strong> unless you choose another: click the 📁 button at
+          the top of the Library, or <strong>Change</strong> at the bottom of the popup. You can create as many folders as you like (one
+          per project or case) and switch between them; the Library shows the folder you are saving to.
+        </p>
+        <p>
+          Google only lets Pramana see folders it created itself, which is what keeps the rest of your Drive private from it, so your
+          existing folders can't be picked. To keep captures inside one of them, create a folder here, then move it there in Google
+          Drive. Pramana keeps saving to it wherever you move it, and whatever you rename it to.
+        </p>
+      </section>
+
+      <section className="help-section" id="help-recording">
         <h2>Recording your screen</h2>
         <p>
           <strong>Record Tab</strong> starts straight away with no pop-ups. <strong>Record Screen</strong> needs your permission each time:
@@ -87,7 +120,26 @@ export function Help() {
         <p>
           While recording, the controls are on the Pramana icon in Chrome's toolbar ({keys.pause} pauses or resumes, {keys.stop}{' '}
           stops), so nothing of Pramana appears in your video. Chrome's own “sharing your screen” bar does: click <strong>Hide</strong>{' '}
-          on it after you start.
+          on it after you start. A recording can be up to {MAX_RECORDING_MINUTES} minutes long; time spent paused doesn't count.
+        </p>
+        <h3>Floating timer and controls</h3>
+        <p>
+          With <strong>Floating timer and controls</strong> switched on in the popup, a small window with the timer, Pause and Stop stays
+          on top of your other windows while you record. It is a separate window, so it is <strong>not in the video</strong> when you
+          record a tab or a single window. Drag it anywhere; closing it doesn't stop the recording.
+        </p>
+        <p>
+          When you record your <strong>entire screen</strong>, everything on the screen is recorded, and only the operating system can
+          hide a window from that, not Chrome. So there the floating window is in the video too: drag it to a corner, or close it and
+          use the icon or the shortcuts. A small minimized “Pramana” window in your taskbar keeps the floating controls alive: leave it
+          there.
+        </p>
+        <h3>Long recordings</h3>
+        <p>
+          Nothing is converted after you stop: the video is recorded as MP4 directly, so it is ready to review at once. Saving to Drive
+          takes as long as your upload speed needs. A long recording of a busy screen can reach a few hundred megabytes; it uploads in
+          pieces with a progress bar, and carries on by itself if your connection drops for a moment. Keep the Library tab open until it
+          says saved.
         </p>
         {os !== 'other' && <p className="help-note">You are using {OS_NAMES[os]}.</p>}
       </section>

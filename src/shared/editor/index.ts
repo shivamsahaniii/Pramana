@@ -24,10 +24,10 @@ const TOOL_KEYS: Record<string, Tool> = {
 };
 
 const TOOL_HINTS: Record<Tool, string> = {
-  select: 'Click an annotation to select it, drag to move it, Delete to remove it.',
+  select: 'Click an annotation to select it, drag to move it, Delete to remove it. Selected text can be resized.',
   highlight: 'Drag to highlight an area.',
   draw: 'Drag to draw freehand.',
-  text: 'Click where the text should go, type, then press Enter.',
+  text: 'Click where the text should go, type, then press Enter. Set the size below.',
   arrow: 'Drag from the start of the arrow to its tip.',
   rectangle: 'Drag to draw a box.',
   blur: 'Drag over anything sensitive to pixelate it.',
@@ -37,6 +37,12 @@ const TOOL_HINTS: Record<Tool, string> = {
 
 const COLOR_TOOLS: Tool[] = ['highlight', 'draw', 'text', 'arrow', 'rectangle'];
 const SIZE_TOOLS: Tool[] = ['draw', 'arrow', 'rectangle'];
+// Text size is in image pixels, so the range reaches far enough for large, high-resolution captures
+const MIN_FONT = 10;
+const MAX_FONT = 200;
+const FONT_STEP = 4;
+// Text starts at about this size on screen, whatever the image's resolution
+const DEFAULT_TEXT_SIZE = 24;
 
 function h<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -79,6 +85,8 @@ export function createEditor(container: HTMLElement | ShadowRoot, options: Edito
   let drag: { start: Point; before: EditorElement[]; moved: boolean } | null = null;
   let textInput: HTMLInputElement | null = null;
   let pendingText: { at: Point; color: string; fontSize: number } | null = null;
+  // The annotation whose size is being adjusted: its steps share one undo entry
+  let resizingId: number | null = null;
   let saving = false;
   let ready = false;
   let copyReset: ReturnType<typeof setTimeout> | undefined;
@@ -132,7 +140,22 @@ export function createEditor(container: HTMLElement | ShadowRoot, options: Edito
   ]);
 
   const sizeSection = h('div', { className: 'pe-section' }, [slider('Size', 1, 20, lineWidth, (v) => (lineWidth = v))]);
-  const fontSection = h('div', { className: 'pe-section' }, [slider('Font', 12, 96, fontSize, (v) => (fontSize = v))]);
+
+  // Text size: A− / A+ buttons and a slider. Also resizes the text or emoji that is selected.
+  const fontSmaller = h('button', { className: 'pe-step-btn', textContent: 'A−', title: 'Smaller text' });
+  const fontLarger = h('button', { className: 'pe-step-btn pe-step-large', textContent: 'A+', title: 'Larger text' });
+  const fontValue = h('span', { className: 'pe-step-value' });
+  const fontSlider = h('input', { type: 'range', min: String(MIN_FONT), max: String(MAX_FONT), value: String(fontSize), title: 'Text size' });
+  fontSlider.setAttribute('aria-label', 'Text size');
+  fontSmaller.addEventListener('click', () => setFontSize(fontSize - FONT_STEP));
+  fontLarger.addEventListener('click', () => setFontSize(fontSize + FONT_STEP));
+  fontSlider.addEventListener('input', () => setFontSize(Number(fontSlider.value)));
+  const fontLabel = h('span', { className: 'pe-label', textContent: 'Text size' });
+  const fontSection = h('div', { className: 'pe-section' }, [
+    fontLabel,
+    h('div', { className: 'pe-stepper' }, [fontSmaller, fontValue, fontLarger]),
+    h('div', { className: 'pe-row' }, [fontSlider]),
+  ]);
 
   const emojiButtons = EMOJI_LIST.map((e) => {
     const btn = h('button', { className: 'pe-emoji-btn', textContent: e });
@@ -176,14 +199,18 @@ export function createEditor(container: HTMLElement | ShadowRoot, options: Edito
     canvas.height = image.naturalHeight;
     ready = true;
     fit();
+    setFontSize(DEFAULT_TEXT_SIZE * pixelRatio());
     render();
   };
   image.src = 'data:image/png;base64,' + options.imageBase64;
 
-  // Scale the canvas down to fit the stage while keeping its full-resolution pixels
+  // Scale the canvas down to fit the stage while keeping its full-resolution pixels.
+  // A much taller image (a full-page capture) fits the width instead and scrolls.
   function fit() {
     if (!ready) return;
-    const scale = Math.min(1, (stage.clientWidth - 32) / canvas.width, (stage.clientHeight - 32) / canvas.height);
+    const fitWidth = Math.min(1, (stage.clientWidth - 32) / canvas.width);
+    const fitBoth = Math.min(fitWidth, (stage.clientHeight - 32) / canvas.height);
+    const scale = fitBoth < fitWidth / 2 ? fitWidth : fitBoth;
     if (!(scale > 0)) return;
     canvas.style.width = `${canvas.width * scale}px`;
     canvas.style.height = `${canvas.height * scale}px`;
@@ -221,6 +248,72 @@ export function createEditor(container: HTMLElement | ShadowRoot, options: Edito
   function remember(previous: EditorElement[]) {
     undoStack = [...undoStack, previous].slice(-MAX_UNDO);
     redoStack = [];
+    resizingId = null;
+  }
+
+  const selectedElement = () => elements.find((el) => el.id === selectedId);
+
+  function measureText(text: string, size: number) {
+    let width = text.length * size * 0.6;
+    if (ctx) {
+      ctx.save();
+      ctx.font = `${size}px ${TEXT_FONT}`;
+      width = ctx.measureText(text)?.width ?? width;
+      ctx.restore();
+    }
+    return { width, height: size * 1.2 };
+  }
+
+  /** The same annotation at a new text size; an emoji stays centred where it was. */
+  function withFontSize(el: EditorElement, size: number): EditorElement {
+    if (el.type === 'text') return { ...el, fontSize: size, ...measureText(el.text, size) };
+    if (el.type === 'emoji') {
+      const side = size * 2;
+      return { ...el, fontSize: side, width: side, height: side, x: el.x + (el.width - side) / 2, y: el.y + (el.height - side) / 2 };
+    }
+    return el;
+  }
+
+  function showFontSize() {
+    fontSlider.value = String(fontSize);
+    fontValue.textContent = `${fontSize} px`;
+    fontSmaller.disabled = fontSize <= MIN_FONT;
+    fontLarger.disabled = fontSize >= MAX_FONT;
+  }
+
+  // Sets the size for new text, for the text being typed, and for the selected text or emoji
+  function setFontSize(next: number) {
+    fontSize = Math.min(MAX_FONT, Math.max(MIN_FONT, Math.round(next)));
+    showFontSize();
+    if (textInput && pendingText) {
+      pendingText = { ...pendingText, fontSize };
+      textInput.style.fontSize = `${fontSize / pixelRatio()}px`;
+      return;
+    }
+    const selected = selectedElement();
+    if (selected?.type !== 'text' && selected?.type !== 'emoji') return;
+    const next_ = elements.map((el) => (el === selected ? withFontSize(el, fontSize) : el));
+    if (resizingId === selected.id) {
+      elements = next_;
+      render();
+    } else {
+      commit(next_);
+      resizingId = selected.id;
+    }
+  }
+
+  /** Which settings show: those of the current tool, or of the selected text or emoji. */
+  function updateSections() {
+    const selected = tool === 'select' ? selectedElement() : undefined;
+    const sized = selected?.type === 'text' || selected?.type === 'emoji';
+    colorSection.hidden = !COLOR_TOOLS.includes(tool);
+    sizeSection.hidden = !SIZE_TOOLS.includes(tool);
+    fontSection.hidden = !(tool === 'text' || tool === 'emoji' || sized);
+    emojiSection.hidden = tool !== 'emoji';
+    fontLabel.textContent = tool === 'emoji' || selected?.type === 'emoji' ? 'Emoji size' : 'Text size';
+    if (selected?.type === 'text') fontSize = selected.fontSize;
+    if (selected?.type === 'emoji') fontSize = Math.round(selected.fontSize / 2);
+    showFontSize();
   }
 
   // Element arrays are never mutated in place, so history can hold them directly
@@ -239,8 +332,10 @@ export function createEditor(container: HTMLElement | ShadowRoot, options: Edito
     redoStack = [...redoStack, elements];
     elements = previous;
     selectedId = null;
+    resizingId = null;
     render();
     updateHistoryButtons();
+    updateSections();
   }
 
   function redo() {
@@ -250,8 +345,10 @@ export function createEditor(container: HTMLElement | ShadowRoot, options: Edito
     undoStack = [...undoStack, elements];
     elements = next;
     selectedId = null;
+    resizingId = null;
     render();
     updateHistoryButtons();
+    updateSections();
   }
 
   function setTool(next: Tool) {
@@ -260,10 +357,7 @@ export function createEditor(container: HTMLElement | ShadowRoot, options: Edito
     if (next !== 'select') selectedId = null;
     for (const t of TOOLS) toolButtons[t].classList.toggle('active', t === next);
     hint.textContent = TOOL_HINTS[next];
-    colorSection.hidden = !COLOR_TOOLS.includes(next);
-    sizeSection.hidden = !SIZE_TOOLS.includes(next);
-    fontSection.hidden = next !== 'text';
-    emojiSection.hidden = next !== 'emoji';
+    updateSections();
     canvas.style.cursor = next === 'select' ? 'default' : next === 'text' ? 'text' : next === 'eraser' ? 'pointer' : 'crosshair';
     render();
   }
@@ -306,17 +400,16 @@ export function createEditor(container: HTMLElement | ShadowRoot, options: Edito
     const text = input.value.trim();
     cancelText();
     if (!text) return;
-    let width = text.length * pending.fontSize * 0.6;
-    if (ctx) {
-      ctx.save();
-      ctx.font = `${pending.fontSize}px ${TEXT_FONT}`;
-      width = ctx.measureText(text)?.width ?? width;
-      ctx.restore();
-    }
+    const id = nextId++;
     commit([
       ...elements,
-      { id: nextId++, type: 'text', x: pending.at.x, y: pending.at.y, width, height: pending.fontSize * 1.2, text, color: pending.color, fontSize: pending.fontSize },
+      { id, type: 'text', x: pending.at.x, y: pending.at.y, ...measureText(text, pending.fontSize), text, color: pending.color, fontSize: pending.fontSize },
     ]);
+    // Stays selected so the size buttons still change it
+    if (tool === 'text') {
+      selectedId = id;
+      render();
+    }
   }
 
   function deleteSelected() {
@@ -324,6 +417,7 @@ export function createEditor(container: HTMLElement | ShadowRoot, options: Edito
     const id = selectedId;
     selectedId = null;
     commit(elements.filter((el) => el.id !== id));
+    updateSections();
   }
 
   function onMouseDown(e: MouseEvent) {
@@ -339,8 +433,10 @@ export function createEditor(container: HTMLElement | ShadowRoot, options: Edito
       case 'select': {
         const hit = hitTest(elements, pt);
         selectedId = hit?.id ?? null;
+        resizingId = null;
         if (hit) drag = { start: pt, before: elements, moved: false };
         render();
+        updateSections();
         return;
       }
       case 'eraser': {
@@ -349,11 +445,15 @@ export function createEditor(container: HTMLElement | ShadowRoot, options: Edito
         return;
       }
       case 'text':
+        selectedId = null;
         openTextInput(pt);
         return;
       case 'emoji': {
         const size = fontSize * 2;
-        commit([...elements, { id: nextId++, type: 'emoji', x: pt.x - size / 2, y: pt.y - size / 2, width: size, height: size, emoji, fontSize: size }]);
+        const id = nextId++;
+        commit([...elements, { id, type: 'emoji', x: pt.x - size / 2, y: pt.y - size / 2, width: size, height: size, emoji, fontSize: size }]);
+        selectedId = id;
+        render();
         return;
       }
       case 'draw':
@@ -418,6 +518,7 @@ export function createEditor(container: HTMLElement | ShadowRoot, options: Edito
     else if (e.key === 'Escape' && selectedId !== null) {
       selectedId = null;
       render();
+      updateSections();
     } else if (!mod && !e.altKey && TOOL_KEYS[key]) setTool(TOOL_KEYS[key]);
     else handled = false;
     if (handled) {

@@ -61,7 +61,7 @@ src/
 │   └── useObjectUrl.ts
 └── shared/
     ├── drive.ts          # Drive client used by background and pages
-    ├── captureRecorder.ts # MediaRecorder + audio mixing + 10-minute limit, shared by both recorders
+    ├── captureRecorder.ts # MediaRecorder + audio mixing + 30-minute limit, shared by both recorders
     ├── recordingStore.ts # IndexedDB hand-off of the finished recording
     ├── StorageMeter.tsx  # Handles unlimited accounts
     ├── toast.ts          # Non-blocking notifications (no alert/confirm/prompt)
@@ -135,7 +135,7 @@ Closing the window mid-recording asks first; if closed anyway the recording is d
 ### After either recording
 
 ```
-Stop / end of sharing / 10 minutes → blob saved to IndexedDB → RECORDING_FINISHED
+Stop / end of sharing / 30 minutes → blob saved to IndexedDB → RECORDING_FINISHED
 Background closes the offscreen doc or recorder window → opens Library ?review=recording
 Library: preview, rename, Save (resumable upload with progress) or Discard
 ```

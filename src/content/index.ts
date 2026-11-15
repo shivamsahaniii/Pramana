@@ -1,12 +1,13 @@
 /// <reference types="chrome" />
 
-// Injected on demand by the popup (Select Area). Shows the selection overlay, crops the
-// capture, and opens the shared editor in a shadow root so page CSS can't affect it.
+// Injected on demand by the popup (Select Area, Full Page). Shows the selection overlay or
+// scrolls through the page, and opens the shared editor in a shadow root so page CSS can't affect it.
 
 import { createEditor } from '../shared/editor';
 import type { EditorController } from '../shared/editor';
 import { blobToBase64 } from '../shared/utils';
 import { showToast } from '../shared/toast';
+import { captureFullPage } from './fullPage';
 
 type Area = { x: number; y: number; width: number; height: number };
 
@@ -137,6 +138,28 @@ function cropAndOpenEditor(base64: string, area: Area) {
   img.src = 'data:image/png;base64,' + base64;
 }
 
+let capturingFullPage = false;
+
+async function captureFullPageAndEdit() {
+  if (capturingFullPage) return;
+  capturingFullPage = true;
+  closeEditorModal();
+  try {
+    const result = await captureFullPage();
+    if (!result) return notify('Full-page capture cancelled.');
+    openEditorModal(result.canvas.toDataURL('image/png').split(',')[1]);
+    if (result.truncated) notify('This page is very long, so the capture stops where the image reached its size limit.');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    notify(
+      /Extension context invalidated/.test(message) ? 'Pramana was updated. Please refresh the page.' : `Full-page capture failed: ${message}`,
+      'error'
+    );
+  } finally {
+    capturingFullPage = false;
+  }
+}
+
 function openEditorModal(imageBase64: string) {
   closeEditorModal();
   const host = document.createElement('div');
@@ -174,14 +197,15 @@ function closeEditorModal() {
   cleanupOverlay();
 }
 
-// The popup injects this script on every Select Area click; only the first copy listens
+// The popup injects this script on every Select Area or Full Page click; only the first copy listens
 const loadedFlag = '__pramanaContentLoaded';
 const globalScope = window as unknown as Record<string, boolean>;
 if (!globalScope[loadedFlag]) {
   globalScope[loadedFlag] = true;
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message.type !== 'CAPTURE_AREA_SELECT') return false;
-    createOverlay();
+    if (message.type === 'CAPTURE_AREA_SELECT') createOverlay();
+    else if (message.type === 'CAPTURE_FULL_PAGE') void captureFullPageAndEdit();
+    else return false;
     sendResponse({ success: true });
     return false;
   });

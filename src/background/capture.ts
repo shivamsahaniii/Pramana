@@ -40,6 +40,32 @@ export async function handleCaptureArea(
   }
 }
 
+// While a full-page capture scrolls through the page, the toolbar icon counts the screens
+async function setCaptureBadge(text: string) {
+  const { recording_state: recording } = await chrome.storage.session.get(['recording_state']);
+  if (recording) return; // the recording badge stays
+  await chrome.action.setBadgeText({ text });
+  if (text) await chrome.action.setBadgeBackgroundColor({ color: '#f26b1d' });
+}
+
+/** One screen of a full-page capture, asked for by the content script as it scrolls. */
+export async function handleCaptureVisible(payload: { step?: number; steps?: number } | undefined, sender: chrome.runtime.MessageSender) {
+  try {
+    const windowId = sender.tab?.windowId;
+    if (!windowId) return { success: false, error: 'No tab/window info' };
+    if (payload?.step && payload.steps && payload.steps > 1) await setCaptureBadge(`${payload.step}/${payload.steps}`);
+    const dataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
+    return { success: true, base64: dataUrl.split(',')[1] };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
+export async function handleCaptureDone() {
+  await setCaptureBadge('');
+  return { success: true };
+}
+
 async function captureTab(windowId?: number) {
   if (!windowId) return { success: false, error: 'No window ID' };
   try {

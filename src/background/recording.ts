@@ -5,10 +5,11 @@
 // page to open from, and the stream it returns only works in that page.
 
 import { shortcutLabels } from '../shared/platform';
+import { MAX_RECORDING_MS } from '../shared/limits';
 
 export const OFFSCREEN_PATH = 'src/offscreen/index.html';
 export const RECORDER_PATH = 'src/recorder/index.html';
-export const MAX_RECORDING_MS = 10 * 60 * 1000;
+export { MAX_RECORDING_MS };
 
 export type RecordingSource = 'tab' | 'screen';
 export type RecordingFormat = 'mp4' | 'webm';
@@ -73,7 +74,7 @@ const SHORTCUTS = `${KEYS.pause} pause/resume, ${KEYS.stop} stop`;
 // The toolbar icon is the recording's only on-screen sign: badge, plus the tooltip on hover
 async function setRecordingBadge(mode: 'recording' | 'paused' | 'off') {
   await chrome.action.setBadgeText({ text: mode === 'recording' ? 'REC' : mode === 'paused' ? '❚❚' : '' });
-  if (mode !== 'off') await chrome.action.setBadgeBackgroundColor({ color: mode === 'recording' ? '#e94560' : '#6b7280' });
+  if (mode !== 'off') await chrome.action.setBadgeBackgroundColor({ color: mode === 'recording' ? '#ef4444' : '#6b7280' });
   await chrome.action.setTitle({
     title:
       mode === 'recording'
@@ -92,18 +93,32 @@ async function markStarted(source: RecordingSource): Promise<RecordingState> {
   return state;
 }
 
-async function openScreenRecorder(mic: boolean, format: RecordingFormat) {
+// `float`: the popup will pass its click on to the new window so it can open the floating
+// controls. The window opens without taking focus, or the popup would close before it could.
+async function openScreenRecorder(mic: boolean, format: RecordingFormat, float: boolean) {
   const { [WINDOW_KEY]: existing } = await chrome.storage.session.get([WINDOW_KEY]);
   if (existing) {
     const focused = await chrome.windows.update(existing, { focused: true }).catch(() => null);
     if (focused) return;
   }
-  const url = chrome.runtime.getURL(`${RECORDER_PATH}?mic=${mic ? 1 : 0}&max=${MAX_RECORDING_MS}&format=${format}`);
-  const win = await chrome.windows.create({ url, type: 'popup', width: 460, height: 400, focused: true });
+  const url = chrome.runtime.getURL(`${RECORDER_PATH}?mic=${mic ? 1 : 0}&max=${MAX_RECORDING_MS}&format=${format}${float ? '&float=1' : ''}`);
+  const win = await chrome.windows.create({ url, type: 'popup', width: 460, height: 400, focused: !float });
   await chrome.storage.session.set({ [WINDOW_KEY]: win?.id });
 }
 
-export async function startRecording(payload: { source: RecordingSource; mic: boolean; tabId?: number; format?: RecordingFormat }) {
+// A tab recording has no window of its own; this small one exists to own the floating controls
+async function openTabControls() {
+  try {
+    await closeRecorderWindow();
+    const url = chrome.runtime.getURL(`${RECORDER_PATH}?mode=tab&float=1&max=${MAX_RECORDING_MS}`);
+    const win = await chrome.windows.create({ url, type: 'popup', width: 420, height: 360, focused: false });
+    await chrome.storage.session.set({ [WINDOW_KEY]: win?.id });
+  } catch {
+    // The recording works without floating controls
+  }
+}
+
+export async function startRecording(payload: { source: RecordingSource; mic: boolean; tabId?: number; format?: RecordingFormat; float?: boolean }) {
   const format: RecordingFormat = payload.format === 'webm' ? 'webm' : 'mp4';
   const { recording } = await getRecordingState();
   if (recording) return { success: false, error: 'A recording is already in progress' };
@@ -111,7 +126,7 @@ export async function startRecording(payload: { source: RecordingSource; mic: bo
   try {
     if (payload.source === 'screen') {
       // Recording starts once the user picks something in the recorder window (RECORDING_STARTED)
-      await openScreenRecorder(payload.mic, format);
+      await openScreenRecorder(payload.mic, format, !!payload.float);
       return { success: true, pending: true };
     }
 
@@ -129,7 +144,9 @@ export async function startRecording(payload: { source: RecordingSource; mic: bo
       await closeOffscreenDocument();
       return { success: false, error: response?.error || 'Recording failed to start' };
     }
-    return { success: true, recording: await markStarted('tab'), warning: response.warning as string | undefined };
+    const recording = await markStarted('tab');
+    if (payload.float) await openTabControls();
+    return { success: true, recording, warning: response.warning as string | undefined };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }

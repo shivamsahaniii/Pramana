@@ -10,6 +10,10 @@ const drive = vi.hoisted(() => ({
   share: vi.fn(),
   unshare: vi.fn(),
   upload: vi.fn(),
+  getSaveFolder: vi.fn(),
+  listSaveFolders: vi.fn(),
+  useSaveFolder: vi.fn(),
+  createSaveFolder: vi.fn(),
 }));
 const recordings = vi.hoisted(() => ({
   getPendingRecording: vi.fn(),
@@ -43,6 +47,12 @@ describe('Dashboard App', () => {
     drive.listFiles.mockResolvedValue(files);
     drive.getQuota.mockResolvedValue({ usage: 1024000, limit: 16106127360, available: 0, status: 'normal' });
     drive.fetchBlob.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
+    drive.getSaveFolder.mockResolvedValue({ id: 'root', name: 'Pramana' });
+    drive.listSaveFolders.mockResolvedValue([
+      { id: 'audit', name: 'Client audit', webViewLink: 'https://drive.google.com/drive/folders/audit' },
+      { id: 'root', name: 'Pramana' },
+    ]);
+    drive.useSaveFolder.mockResolvedValue(undefined);
     recordings.getPendingRecording.mockResolvedValue(null);
     recordings.clearPendingRecording.mockResolvedValue(undefined);
     URL.createObjectURL = vi.fn(() => 'blob:preview');
@@ -208,5 +218,58 @@ describe('Dashboard App', () => {
     window.history.replaceState(null, '', '/?grant=microphone');
     render(<App />);
     expect(screen.getByText('Allow microphone')).toBeInTheDocument();
+  });
+
+  describe('save folder', () => {
+    it('shows the current folder and switches to another one Pramana created', async () => {
+      render(<App />);
+      fireEvent.click(await screen.findByRole('button', { name: /Pramana/ }));
+
+      const dialog = await screen.findByRole('dialog', { name: 'Save folder' });
+      expect(await within(dialog).findByText('Saving here')).toBeInTheDocument();
+      expect(within(dialog).getByText('Open in Drive')).toHaveAttribute('href', 'https://drive.google.com/drive/folders/audit');
+      drive.listFiles.mockResolvedValue([]);
+      drive.getSaveFolder.mockResolvedValue({ id: 'audit', name: 'Client audit' });
+      fireEvent.click(within(dialog).getByText('📁 Client audit'));
+
+      await waitFor(() => expect(drive.useSaveFolder).toHaveBeenCalledWith(expect.objectContaining({ id: 'audit', name: 'Client audit' })));
+      expect(await screen.findByText('Saving to “Client audit” from now on')).toBeInTheDocument();
+      // The Library now shows the new folder's files
+      expect(await screen.findByText(/No files yet/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Client audit/ })).toBeInTheDocument();
+      expect(screen.queryByRole('dialog', { name: 'Save folder' })).toBeNull();
+    });
+
+    it('creates a new folder and saves to it', async () => {
+      drive.createSaveFolder.mockImplementation(async () => {
+        drive.getSaveFolder.mockResolvedValue({ id: 'new', name: 'Bug evidence' });
+        return { id: 'new', name: 'Bug evidence' };
+      });
+      render(<App />);
+      fireEvent.click(await screen.findByRole('button', { name: /Pramana/ }));
+
+      fireEvent.change(await screen.findByLabelText('New folder name'), { target: { value: 'Bug evidence' } });
+      fireEvent.click(screen.getByText('Create and use'));
+
+      await waitFor(() => expect(drive.createSaveFolder).toHaveBeenCalledWith('Bug evidence'));
+      expect(await screen.findByRole('button', { name: /Bug evidence/ })).toBeInTheDocument();
+    });
+
+    it('keeps the dialog open and says why when the folder cannot be created', async () => {
+      drive.createSaveFolder.mockRejectedValue(new Error('Drive is full'));
+      render(<App />);
+      fireEvent.click(await screen.findByRole('button', { name: /Pramana/ }));
+      fireEvent.change(await screen.findByLabelText('New folder name'), { target: { value: 'X' } });
+      fireEvent.click(screen.getByText('Create and use'));
+
+      expect(await screen.findByText('Drive is full')).toBeInTheDocument();
+      expect(screen.getByRole('dialog', { name: 'Save folder' })).toBeInTheDocument();
+    });
+
+    it('opens the chooser straight away from the popup link', async () => {
+      window.history.replaceState(null, '', '/?folder');
+      render(<App />);
+      expect(await screen.findByRole('dialog', { name: 'Save folder' })).toBeInTheDocument();
+    });
   });
 });

@@ -5,14 +5,18 @@ import { formatDuration, recordedSeconds } from '../shared/utils';
 import { StorageMeter } from '../shared/StorageMeter';
 import { copyImageToClipboard } from '../shared/clipboard';
 import { shortcutLabels } from '../shared/platform';
+import { MAX_RECORDING_MINUTES, MAX_RECORDING_SECONDS } from '../shared/limits';
+import { DEFAULT_SAVE_FOLDER, SAVE_FOLDER_KEY } from '../shared/drive';
 import type { StorageQuota } from '../shared/drive';
 
 type RecordingState = { startedAt: number; source: 'tab' | 'screen'; pausedAt?: number | null; pausedMs?: number };
 type Notice = { kind: 'success' | 'error' | 'info'; text: string };
 
-const MAX_RECORDING_SECONDS = 600;
 const MIC_PREF_KEY = 'record_mic';
 const FORMAT_PREF_KEY = 'record_format';
+const FLOAT_PREF_KEY = 'record_float';
+// The floating timer is a Document Picture-in-Picture window (Chrome 116 and later)
+const CAN_FLOAT = 'documentPictureInPicture' in window;
 type RecordingFormat = 'mp4' | 'webm';
 const SHORTCUTS = shortcutLabels();
 
@@ -23,6 +27,18 @@ function sendMessage<T = any>(message: unknown): Promise<T> {
       else resolve(response);
     });
   });
+}
+
+/**
+ * The floating controls can only open in answer to a click. This passes the popup's click on to
+ * the recorder window the background just opened, retrying while that window loads.
+ */
+async function passClickToRecorder() {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const reply = await chrome.runtime.sendMessage({ target: 'recorder', type: 'RECORDER_FLOAT' }).catch(() => null);
+    if (reply?.handled) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }
 
 async function getActiveTab() {
@@ -43,15 +59,19 @@ function App() {
   const [elapsed, setElapsed] = useState(0);
   const [useMic, setUseMic] = useState(false);
   const [format, setFormat] = useState<RecordingFormat>('mp4');
+  const [saveFolder, setSaveFolder] = useState(DEFAULT_SAVE_FOLDER);
+  const [useFloat, setUseFloat] = useState(true);
 
   const showError = (text: string) => setNotice({ kind: 'error', text });
 
   useEffect(() => {
     checkAuthStatus();
     refreshRecordingState();
-    chrome.storage.local.get([MIC_PREF_KEY, FORMAT_PREF_KEY]).then((data) => {
+    chrome.storage.local.get([MIC_PREF_KEY, FORMAT_PREF_KEY, SAVE_FOLDER_KEY, FLOAT_PREF_KEY]).then((data) => {
       setUseMic(!!data?.[MIC_PREF_KEY]);
+      if (data?.[FLOAT_PREF_KEY] === false) setUseFloat(false);
       if (data?.[FORMAT_PREF_KEY] === 'webm') setFormat('webm');
+      if (data?.[SAVE_FOLDER_KEY]?.name) setSaveFolder(data[SAVE_FOLDER_KEY].name);
     });
     // Follow the recording live: started in the recorder window, paused by a shortcut, stopped…
     const onSessionChange = (changes: Record<string, chrome.storage.StorageChange>) => {
@@ -144,7 +164,8 @@ function App() {
     }
   };
 
-  const handleSelectArea = async () => {
+  // Select Area and Full Page run in the page itself, so the popup hands over and closes
+  const captureInPage = async (type: 'CAPTURE_AREA_SELECT' | 'CAPTURE_FULL_PAGE') => {
     setNotice(null);
     const tab = await getActiveTab();
     if (!tab?.id) return showError('No active tab found.');
@@ -153,13 +174,15 @@ function App() {
     }
     try {
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
-      await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_AREA_SELECT' });
+      await chrome.tabs.sendMessage(tab.id, { type });
       window.close();
     } catch (err) {
-      console.error('Select area failed:', err);
-      showError('Cannot select an area on this page. Try another website.');
+      console.error('Capture in page failed:', err);
+      showError(type === 'CAPTURE_FULL_PAGE' ? 'Cannot capture this page. Try another website.' : 'Cannot select an area on this page. Try another website.');
     }
   };
+  const handleSelectArea = () => captureInPage('CAPTURE_AREA_SELECT');
+  const handleFullPage = () => captureInPage('CAPTURE_FULL_PAGE');
 
   // Uploads go through the background so they finish even if the popup closes
   const saveScreenshot = async (base64: string) => {
@@ -212,8 +235,13 @@ function App() {
     setNotice(null);
     try {
       const tab = await getActiveTab();
-      const response = await sendMessage({ type: 'START_RECORDING', payload: { source, mic: useMic, tabId: tab?.id, format } });
+      const float = CAN_FLOAT && useFloat;
+      const response = await sendMessage({
+        type: 'START_RECORDING',
+        payload: { source, mic: useMic, tabId: tab?.id, format, ...(float && { float: true }) },
+      });
       if (!response?.success) return showError(response?.error || 'Recording failed to start');
+      if (float) await passClickToRecorder();
       // Get out of the way so the popup isn't in the recording; the toolbar icon has the controls
       if (response.pending) return window.close();
       setRecording(response.recording);
@@ -236,8 +264,8 @@ function App() {
     setNotice({ kind: 'info', text: 'Recording stopped. It will open in your Library to review and save.' });
   };
 
-  const openDashboard = () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL('src/dashboard/index.html') });
+  const openDashboard = (query = '') => {
+    chrome.tabs.create({ url: chrome.runtime.getURL(`src/dashboard/index.html${query}`) });
   };
 
   const noticeEl = notice && (
@@ -331,7 +359,7 @@ function App() {
             <span className="tile-icon">🖥️</span>
             <span className="tile-text">
               <span className="tile-title">Visible Tab</span>
-              <span className="tile-hint">Whole page view</span>
+              <span className="tile-hint">What you see now</span>
             </span>
           </button>
           <button className="tile" onClick={handleSelectArea} title="Drag to choose part of the page">
@@ -339,6 +367,13 @@ function App() {
             <span className="tile-text">
               <span className="tile-title">Select Area</span>
               <span className="tile-hint">Drag to crop</span>
+            </span>
+          </button>
+          <button className="tile tile-wide" onClick={handleFullPage} title="Scrolls through the page and captures all of it, top to bottom">
+            <span className="tile-icon">📜</span>
+            <span className="tile-text">
+              <span className="tile-title">Full Page</span>
+              <span className="tile-hint">Scrolls and captures the whole page</span>
             </span>
           </button>
         </div>
@@ -371,14 +406,14 @@ function App() {
         ) : (
           <>
             <div className="tile-grid">
-              <button className="tile" onClick={() => startRecording('tab')} title="Keeps recording if you close this popup. Up to 10 minutes.">
+              <button className="tile" onClick={() => startRecording('tab')} title={`Keeps recording if you close this popup. Up to ${MAX_RECORDING_MINUTES} minutes.`}>
                 <span className="tile-icon">🎬</span>
                 <span className="tile-text">
                   <span className="tile-title">Record Tab</span>
                   <span className="tile-hint">Only this tab</span>
                 </span>
               </button>
-              <button className="tile" onClick={() => startRecording('screen')} title="Keeps recording if you close this popup. Up to 10 minutes.">
+              <button className="tile" onClick={() => startRecording('screen')} title={`Keeps recording if you close this popup. Up to ${MAX_RECORDING_MINUTES} minutes.`}>
                 <span className="tile-icon">🖥️</span>
                 <span className="tile-text">
                   <span className="tile-title">Record Screen</span>
@@ -407,14 +442,34 @@ function App() {
                 </select>
               </label>
             </div>
+            {CAN_FLOAT && (
+              <label className="mic-toggle" title="A small always-on-top window with the timer, Pause and Stop. It is not in tab or window recordings. A recording of the entire screen shows it, like everything else on screen.">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={useFloat}
+                  onChange={(e) => {
+                    setUseFloat(e.target.checked);
+                    chrome.storage.local.set({ [FLOAT_PREF_KEY]: e.target.checked });
+                  }}
+                />
+                Floating timer and controls
+              </label>
+            )}
           </>
         )}
       </section>
 
-      <button className="btn-library" onClick={openDashboard}>
-        <span>📚 Open Library</span>
-        <span aria-hidden="true">→</span>
-      </button>
+      <div className="popup-footer">
+        <button className="btn-library" onClick={() => openDashboard()}>
+          <span>📚 Open Library</span>
+          <span aria-hidden="true">→</span>
+        </button>
+        <button className="save-folder" onClick={() => openDashboard('?folder')} title="Choose the Google Drive folder to save to">
+          <span className="save-folder-name">📁 Saves to {saveFolder}</span>
+          <span className="save-folder-change">Change</span>
+        </button>
+      </div>
     </div>
   );
 }

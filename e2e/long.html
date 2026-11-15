@@ -1,0 +1,14 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Long page</title>
+<style>
+  /* The hard cases for a full-page capture: a fixed header, a sticky bar, a fixed button at the bottom */
+  *{box-sizing:border-box;margin:0} body{font-family:sans-serif;background:#f8fafc;color:#0f172a}
+  header{position:fixed;top:0;left:0;right:0;height:56px;background:rgb(15,23,42);color:#fff;display:flex;align-items:center;padding:0 24px;font-weight:700;z-index:10}
+  .sticky{position:sticky;top:56px;background:rgb(242,107,29);color:#fff;padding:10px 24px;z-index:5}
+  main{padding:72px 24px 24px}
+  section{height:420px;margin-bottom:16px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:64px;font-weight:800;background:rgb(191,219,254)}
+  .chat{position:fixed;right:20px;bottom:20px;width:64px;height:64px;border-radius:50%;background:rgb(22,163,74)}
+  footer{height:80px;background:rgb(15,23,42);color:#fff;display:flex;align-items:center;justify-content:center}
+</style></head>
+<body><header>Fixed header</header>
+<main><section>1</section><section>2</section><div class="sticky">Sticky bar</div><section>3</section><section>4</section><section>5</section><section>6</section></main>
+<footer>End of page</footer><div class="chat"></div></body></html>

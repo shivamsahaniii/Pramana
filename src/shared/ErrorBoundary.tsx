@@ -35,7 +35,7 @@ export class ErrorBoundary extends Component<Props, State> {
               color: '#eaeaea',
             }}
           >
-            <h2 style={{ marginBottom: 12, color: '#e94560' }}>Something went wrong</h2>
+            <h2 style={{ marginBottom: 12, color: '#f26b1d' }}>Something went wrong</h2>
             <p style={{ fontSize: 14, color: '#888', marginBottom: 16 }}>
               {this.state.error?.message || 'An unexpected error occurred.'}
             </p>
@@ -43,7 +43,7 @@ export class ErrorBoundary extends Component<Props, State> {
               onClick={() => window.location.reload()}
               style={{
                 padding: '8px 20px',
-                background: '#e94560',
+                background: '#f26b1d',
                 border: 'none',
                 borderRadius: 6,
                 color: '#fff',
