@@ -48,6 +48,8 @@ async function getActiveTab() {
 
 function App() {
   const [isSignedIn, setIsSignedIn] = useState(false);
+  // Until the background answers, show neither the sign-in button nor the tools (no flash of "Sign in")
+  const [authChecked, setAuthChecked] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [quota, setQuota] = useState<StorageQuota | null>(null);
@@ -107,7 +109,11 @@ function App() {
   };
 
   const checkAuthStatus = () => {
+    // A background that doesn't answer still ends up at the sign-in button
+    const fallback = setTimeout(() => setAuthChecked(true), 1500);
     chrome.runtime.sendMessage({ type: 'AUTH_STATUS' }, (response) => {
+      clearTimeout(fallback);
+      setAuthChecked(true);
       if (response?.signedIn) {
         setIsSignedIn(true);
         setUserEmail(response.email);
@@ -273,6 +279,17 @@ function App() {
       {notice.text}
     </div>
   );
+
+  if (!isSignedIn && !authChecked) {
+    return (
+      <div className="popup-container" aria-busy="true">
+        <div className="logo">
+          <h1>Pramana</h1>
+          <p>Capture. Edit. Share.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!isSignedIn) {
     return (

@@ -263,4 +263,18 @@ describe('Popup App', () => {
     expect(await screen.findByText('Sign in with Google')).toBeInTheDocument();
   });
 
+  it('does not flash the sign-in button while it asks whether you are signed in', async () => {
+    let answer: ((r: unknown) => void) | undefined;
+    handlers.AUTH_STATUS = () => undefined;
+    sendMessage.mockImplementation((msg: any, callback?: (r: unknown) => void) => {
+      if (msg.type === 'AUTH_STATUS') answer = callback;
+      else callback?.(handlers[msg.type]?.(msg));
+    });
+    render(<App />);
+    await screen.findByText('Capture. Edit. Share.');
+    expect(screen.queryByText('Sign in with Google')).not.toBeInTheDocument();
+    act(() => answer?.({ signedIn: true, email: 'test@test.com', name: 'Test User' }));
+    expect(await screen.findByText('Visible Tab')).toBeInTheDocument();
+    expect(screen.queryByText('Sign in with Google')).not.toBeInTheDocument();
+  });
 });
