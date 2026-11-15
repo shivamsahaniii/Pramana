@@ -123,16 +123,17 @@
 - [x] Store screenshots (1280×800), promo tiles and promo video
 - [x] Submitted and approved: 1.0.0 is live on the Chrome Web Store (8 Nov 2026)
 
-### Phase 10 — User feedback (1.1.0) 🟡 Built, in local testing
-From the first users' feedback. Not yet submitted to the store.
+### Phase 10 — User feedback (1.1.0, 1.1.1) 🟡 Submitted, in review
+From the first users' feedback.
 - [x] Full Page capture (scroll and stitch)
 - [x] Choose the Drive folder to save to (folders Pramana created; can be moved or renamed in Drive)
 - [x] Recording limit raised from 10 to 30 minutes; large uploads resume after a dropped connection
-- [x] Floating timer with Pause/Stop that stays out of tab and window recordings
+- [x] Floating timer with Pause/Stop, small and in the top left corner; stays out of tab and window recordings, visible in entire-screen recordings
 - [x] Editor: clear text-size controls that also resize placed text; orange theme across popup, editor and Library
-- [x] 257 tests + 14 end-to-end scenarios
-- [ ] Manual checks on real desktops: floating timer's size and focus on Ubuntu, Windows and Mac; a full 30-minute recording and its upload
-- [ ] Submit 1.1.0 for review
+- [x] 1.1.0 submitted for review (15 Nov 2026), tag `v1.1.0`
+- [x] 1.1.1 patch: the popup no longer flashes "Sign in with Google" while it checks the sign-in state (tag `v1.1.1`)
+- [ ] Submit 1.1.1 once 1.1.0 is live
+- [ ] Manual checks: floating timer on Windows and Mac; a full 30-minute recording and its upload
 
 ## What's Working Now
 
