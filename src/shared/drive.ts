@@ -1,12 +1,16 @@
 /// <reference types="chrome" />
 
 // Google Drive client shared by the background worker and extension pages.
-// Everything lives under a single app-created `Pramana/` folder (drive.file scope).
+// Everything lives under one app-created save folder (`Pramana/` unless the user picks another).
+// The drive.file scope only shows folders Pramana created, so the save folder is always one of
+// those. It is remembered by ID: the user can rename it or move it anywhere in Drive.
 
 const API = 'https://www.googleapis.com/drive/v3';
 const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/files';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
-const ROOT_FOLDER = 'Pramana';
+export const DEFAULT_SAVE_FOLDER = 'Pramana';
+export const SAVE_FOLDER_KEY = 'drive_save_folder';
+const MAX_FOLDER_NAME = 100;
 const FILE_FIELDS = 'id,name,mimeType,size,createdTime,thumbnailLink,webViewLink,shared';
 
 // Files above this size use a resumable upload instead of a single multipart request
@@ -34,6 +38,28 @@ export interface DriveFile {
   folder: string;
 }
 
+export interface DriveFolder {
+  id: string;
+  name: string;
+  webViewLink?: string;
+}
+
+/** Remembers which folder captures are saved to. */
+export interface SaveFolderStore {
+  get(): Promise<{ id: string; name: string } | null>;
+  set(folder: { id: string; name: string }): Promise<void>;
+}
+
+const chromeSaveFolderStore: SaveFolderStore = {
+  async get() {
+    const data = await chrome.storage.local.get([SAVE_FOLDER_KEY]);
+    return data?.[SAVE_FOLDER_KEY] || null;
+  },
+  async set(folder) {
+    await chrome.storage.local.set({ [SAVE_FOLDER_KEY]: folder });
+  },
+};
+
 export interface StorageQuota {
   usage: number;
   // null when the account has unlimited storage
@@ -56,6 +82,14 @@ export class DriveError extends Error {
 
 const LOW_SPACE_BYTES = 500 * 1024 * 1024;
 
+// Waits between attempts when an upload chunk fails (connection dropped, Drive busy)
+const UPLOAD_RETRY_DELAYS_MS = [1000, 3000, 8000, 15000];
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** A value inside a Drive search query's quotes. */
+const quoted = (value: string) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
 export function summarizeQuota(raw: { limit?: string; usage?: string }): StorageQuota {
   const usage = Number(raw.usage || 0);
   if (raw.limit === undefined) {
@@ -67,8 +101,13 @@ export function summarizeQuota(raw: { limit?: string; usage?: string }): Storage
   return { usage, limit, available, status };
 }
 
-export function createDriveClient(getToken: TokenProvider) {
+export function createDriveClient(
+  getToken: TokenProvider,
+  { saveFolderStore = chromeSaveFolderStore, uploadRetryDelaysMs = UPLOAD_RETRY_DELAYS_MS }: { saveFolderStore?: SaveFolderStore; uploadRetryDelaysMs?: number[] } = {}
+) {
   const folderCache = new Map<string, string>();
+  // The save folder this client has already checked still exists
+  let verifiedSaveFolder: string | undefined;
 
   async function request(url: string, init: RequestInit = {}, refresh = false): Promise<Response> {
     const token = await getToken(refresh);
@@ -108,7 +147,7 @@ export function createDriveClient(getToken: TokenProvider) {
     const cached = folderCache.get(cacheKey);
     if (cached) return cached;
 
-    let q = `name='${name}' and mimeType='${FOLDER_MIME}' and trashed=false`;
+    let q = `name='${quoted(name)}' and mimeType='${FOLDER_MIME}' and trashed=false`;
     if (parentId) q += ` and '${parentId}' in parents`;
     const [existing] = await listAll<{ id: string }>(q, 'id');
 
@@ -126,8 +165,43 @@ export function createDriveClient(getToken: TokenProvider) {
     return id;
   }
 
-  async function getRootFolder() {
-    return findOrCreateFolder(ROOT_FOLDER);
+  async function folderExists(id: string): Promise<boolean> {
+    try {
+      const folder = await requestJson<{ trashed?: boolean }>(`${API}/files/${id}?fields=id,trashed`);
+      return !folder.trashed;
+    } catch (error) {
+      if (error instanceof DriveError && error.status === 404) return false;
+      throw error;
+    }
+  }
+
+  /** The folder captures are saved to: the user's choice, or `Pramana/` (also when the chosen one was deleted). */
+  async function getRootFolder(): Promise<string> {
+    const chosen = await saveFolderStore.get();
+    if (chosen?.id) {
+      if (chosen.id === verifiedSaveFolder) return chosen.id;
+      if (await folderExists(chosen.id)) {
+        verifiedSaveFolder = chosen.id;
+        return chosen.id;
+      }
+    }
+    const id = await findOrCreateFolder(DEFAULT_SAVE_FOLDER);
+    await saveFolderStore.set({ id, name: DEFAULT_SAVE_FOLDER });
+    verifiedSaveFolder = id;
+    return id;
+  }
+
+  /** Folders Pramana created, without the Screenshots/Recordings/Other folders inside them. */
+  async function listSaveFolders(): Promise<DriveFolder[]> {
+    const all = await listAll<DriveFolder & { parents?: string[] }>(
+      `mimeType='${FOLDER_MIME}' and trashed=false`,
+      'id,name,parents,webViewLink'
+    );
+    const ids = new Set(all.map((f) => f.id));
+    return all
+      .filter((f) => !(f.parents || []).some((parent) => ids.has(parent)))
+      .map(({ id, name, webViewLink }) => ({ id, name, webViewLink }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   async function uploadMultipart(blob: Blob, metadata: object): Promise<string> {
@@ -154,27 +228,62 @@ export function createDriveClient(getToken: TokenProvider) {
     const location = session.headers.get('Location');
     if (!location) throw new DriveError('Drive did not start the upload', 500);
 
-    // The session URL authorizes the upload itself, so chunks are sent without a token
+    // The session URL authorizes the upload itself, so chunks are sent without a token.
+    // After a failed chunk, Drive says how much it has so the upload carries on from there.
+    async function resumePoint(): Promise<number | string> {
+      const response = await fetch(location!, { method: 'PUT', headers: { 'Content-Range': `bytes */${blob.size}` } });
+      if (response.status === 308) {
+        const range = response.headers.get('Range');
+        return range ? Number(range.split('-')[1]) + 1 : 0;
+      }
+      if (response.ok) return (await response.json()).id as string;
+      throw new DriveError(`Upload failed (${response.status})`, response.status);
+    }
+
     let offset = 0;
+    let failures = 0;
     for (;;) {
       const end = Math.min(offset + UPLOAD_CHUNK_SIZE, blob.size);
-      const response = await fetch(location, {
-        method: 'PUT',
-        headers: { 'Content-Range': `bytes ${offset}-${end - 1}/${blob.size}` },
-        body: blob.slice(offset, end),
-      });
-      if (response.status === 308) {
+      let response: Response | null = null;
+      try {
+        response = await fetch(location, {
+          method: 'PUT',
+          headers: { 'Content-Range': `bytes ${offset}-${end - 1}/${blob.size}` },
+          body: blob.slice(offset, end),
+        });
+      } catch {
+        // The connection dropped; retried below
+      }
+      if (response?.status === 308) {
+        failures = 0;
         const range = response.headers.get('Range');
         offset = range ? Number(range.split('-')[1]) + 1 : end;
         onProgress?.(offset / blob.size);
         continue;
       }
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new DriveError(data.error?.message || `Upload failed (${response.status})`, response.status);
+      if (response?.ok) {
+        onProgress?.(1);
+        return (await response.json()).id;
       }
-      onProgress?.(1);
-      return (await response.json()).id;
+
+      const temporary = !response || response.status >= 500 || response.status === 429;
+      if (!temporary || failures >= uploadRetryDelaysMs.length) {
+        const data = response ? await response.json().catch(() => ({})) : {};
+        const fallback = response ? `Upload failed (${response.status})` : 'The connection was lost during the upload';
+        throw new DriveError(data.error?.message || fallback, response?.status ?? 0);
+      }
+      await sleep(uploadRetryDelaysMs[failures++]);
+      try {
+        const point = await resumePoint();
+        if (typeof point === 'string') {
+          onProgress?.(1);
+          return point;
+        }
+        offset = point;
+      } catch (error) {
+        // Still offline: the next attempt sends the same chunk. Anything else ended the upload.
+        if (error instanceof DriveError) throw error;
+      }
     }
   }
 
@@ -246,6 +355,38 @@ export function createDriveClient(getToken: TokenProvider) {
 
     async unshare(fileId: string): Promise<void> {
       await request(`${API}/files/${fileId}/permissions/anyoneWithLink`, { method: 'DELETE' });
+    },
+
+    /** The folder captures are saved to, with its current name (the user may have renamed it in Drive). */
+    async getSaveFolder(): Promise<DriveFolder> {
+      const id = await getRootFolder();
+      return requestJson<DriveFolder>(`${API}/files/${id}?fields=id,name,webViewLink`);
+    },
+
+    listSaveFolders,
+
+    /** Saves to `folder` from now on. */
+    async useSaveFolder(folder: DriveFolder): Promise<void> {
+      await saveFolderStore.set({ id: folder.id, name: folder.name });
+      verifiedSaveFolder = undefined;
+    },
+
+    /** Creates a folder in My Drive (or reuses one with that name) and saves to it from now on. */
+    async createSaveFolder(rawName: string): Promise<DriveFolder> {
+      const name = rawName.trim().slice(0, MAX_FOLDER_NAME);
+      if (!name) throw new DriveError('Give the folder a name', 400);
+      const existing = (await listSaveFolders()).find((f) => f.name.toLowerCase() === name.toLowerCase());
+      const folder =
+        existing ||
+        (await requestJson<DriveFolder>(`${API}/files?fields=id,name,webViewLink`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, mimeType: FOLDER_MIME }),
+        }));
+      if (!folder.id) throw new DriveError(`Could not create the ${name} folder`, 500);
+      await saveFolderStore.set({ id: folder.id, name: folder.name });
+      verifiedSaveFolder = undefined;
+      return folder;
     },
 
     async getQuota(): Promise<StorageQuota> {

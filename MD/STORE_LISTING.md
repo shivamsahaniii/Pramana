@@ -22,18 +22,19 @@ Capture, annotate and share, and keep everything in your own Google Drive.
 SCREENSHOTS
 • Visible Tab: capture everything you can see in one click
 • Select Area: drag to capture just the part you need
-• Editor: highlight, draw, arrows, boxes, text, emoji, and a strong blur for passwords and personal details. Undo, move and delete anything before saving
+• Full Page: capture the whole scrolling page as one image
+• Editor: highlight, draw, arrows, boxes, text in any size, emoji, and a strong blur for passwords and personal details. Undo, move and delete anything before saving
 • Copy image: paste straight into Slack, email, docs or chat
 
 SCREEN RECORDING
 • Record Tab: starts instantly, keeps going if you switch tabs
 • Record Screen: your whole screen or a single window
-• Include your microphone, pause and resume, up to 10 minutes per recording
-• Nothing of Pramana appears in your video: controls live on the toolbar icon, plus keyboard shortcuts
+• Include your microphone, pause and resume, up to 30 minutes per recording
+• Floating timer with Pause and Stop that stays on top and is not in tab or window recordings; controls also live on the toolbar icon, plus keyboard shortcuts
 • MP4 by default, so recordings play everywhere
 
 YOUR DRIVE, YOUR FILES
-• Saved to a "Pramana" folder in your Google Drive
+• Saved to a "Pramana" folder in your Google Drive, or a folder you create and name yourself
 • Library: search, sort, preview, rename, download, delete
 • Share link: anyone with the link can view; stop sharing any time
 

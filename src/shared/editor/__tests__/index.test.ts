@@ -190,4 +190,116 @@ describe('createEditor', () => {
     expect(container.querySelector('.pe-root')).toBeNull();
     editor = createEditor(container, { imageBase64: 'AAAA', onSave, onCancel });
   });
+
+  describe('text size', () => {
+    const size = () => container.querySelector('.pe-step-value')!.textContent;
+    const larger = () => container.querySelector<HTMLButtonElement>('button[title="Larger text"]')!;
+    const smaller = () => container.querySelector<HTMLButtonElement>('button[title="Smaller text"]')!;
+    const fontSection = () => larger().closest<HTMLElement>('.pe-section')!;
+    const type = (text: string, x = 50, y = 40) => {
+      mouse('mousedown', x, y);
+      const input = container.querySelector<HTMLInputElement>('.pe-text-input')!;
+      input.value = text;
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    };
+
+    it('is offered for the Text and Emoji tools only', () => {
+      expect(fontSection().hidden).toBe(true);
+      editor.setTool('text');
+      expect(fontSection().hidden).toBe(false);
+      expect(size()).toBe('24 px');
+      editor.setTool('emoji');
+      expect(fontSection().hidden).toBe(false);
+      expect(fontSection().querySelector('.pe-label')!.textContent).toBe('Emoji size');
+      editor.setTool('arrow');
+      expect(fontSection().hidden).toBe(true);
+    });
+
+    it('sets the size of new text with the A+ and A− buttons', () => {
+      editor.setTool('text');
+      larger().click();
+      larger().click();
+      smaller().click();
+      expect(size()).toBe('28 px');
+
+      type('Bigger');
+      expect(editor.getElements()[0]).toMatchObject({ type: 'text', fontSize: 28 });
+      expect((editor.getElements()[0] as { height: number }).height).toBeCloseTo(28 * 1.2);
+    });
+
+    it('resizes the text that was just typed, as a single undo step', () => {
+      editor.setTool('text');
+      type('Resize me');
+      larger().click();
+      larger().click();
+      larger().click();
+
+      expect(editor.getElements()).toEqual([expect.objectContaining({ text: 'Resize me', fontSize: 36, x: 50, y: 40 })]);
+
+      editor.undo();
+      expect(editor.getElements()).toEqual([expect.objectContaining({ text: 'Resize me', fontSize: 24 })]);
+      editor.undo();
+      expect(editor.getElements()).toHaveLength(0);
+    });
+
+    it('leaves earlier text alone once new text is started', () => {
+      editor.setTool('text');
+      type('First');
+      mouse('mousedown', 300, 300); // starts new text elsewhere
+      larger().click(); // clicking the button commits nothing (empty), and must not touch "First"
+      expect(editor.getElements()).toEqual([expect.objectContaining({ text: 'First', fontSize: 24 })]);
+    });
+
+    it('shows the size of text selected with the Select tool and changes it', () => {
+      editor.setTool('text');
+      larger().click();
+      type('Pick me');
+      editor.setTool('select');
+      // Clicking empty space selects nothing: no size to show
+      mouse('mousedown', 400, 400);
+      mouse('mouseup', 400, 400, window);
+      expect(fontSection().hidden).toBe(true);
+
+      mouse('mousedown', 55, 45);
+      mouse('mouseup', 55, 45, window);
+      expect(fontSection().hidden).toBe(false);
+      expect(size()).toBe('28 px');
+
+      smaller().click();
+      smaller().click();
+      expect(editor.getElements()[0]).toMatchObject({ fontSize: 20 });
+
+      key('Escape');
+      expect(fontSection().hidden).toBe(true);
+    });
+
+    it('follows the slider too', () => {
+      editor.setTool('text');
+      const slider = container.querySelector<HTMLInputElement>('input[aria-label="Text size"]')!;
+      slider.value = '80';
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(size()).toBe('80 px');
+      type('Huge');
+      expect(editor.getElements()[0]).toMatchObject({ fontSize: 80 });
+    });
+
+    it('stops at the smallest and largest sizes', () => {
+      editor.setTool('text');
+      for (let i = 0; i < 10; i++) smaller().click();
+      expect(size()).toBe('10 px');
+      expect(smaller().disabled).toBe(true);
+      for (let i = 0; i < 60; i++) larger().click();
+      expect(size()).toBe('200 px');
+      expect(larger().disabled).toBe(true);
+    });
+
+    it('sizes emoji, keeping a resized one centred where it was placed', () => {
+      editor.setTool('emoji');
+      mouse('mousedown', 100, 100);
+      expect(editor.getElements()[0]).toMatchObject({ type: 'emoji', fontSize: 48, x: 76, y: 76 });
+
+      larger().click();
+      expect(editor.getElements()[0]).toMatchObject({ fontSize: 56, width: 56, x: 72, y: 72 });
+    });
+  });
 });

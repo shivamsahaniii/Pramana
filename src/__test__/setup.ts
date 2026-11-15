@@ -58,6 +58,7 @@ const mockChrome = {
   },
   windows: {
     create: vi.fn().mockResolvedValue({ id: 99 }),
+    getCurrent: vi.fn().mockResolvedValue({ id: 99 }),
     update: vi.fn().mockResolvedValue({ id: 99 }),
     remove: vi.fn().mockResolvedValue(undefined),
     onRemoved: { addListener: vi.fn() },

@@ -23,7 +23,8 @@ export function createFakeDrive({ thumbBase }) {
     size: f.data ? String(f.data.length) : undefined,
     createdTime: f.createdTime,
     shared: !!f.shared,
-    webViewLink: `https://drive.google.com/file/d/${f.id}/view`,
+    parents: f.parents,
+    webViewLink: f.mimeType === FOLDER ? `https://drive.google.com/drive/folders/${f.id}` : `https://drive.google.com/file/d/${f.id}/view`,
     ...(f.mimeType.startsWith('image/') && { thumbnailLink: `${thumbBase}/thumb/${f.id}` }),
   });
   const json = (body, status = 200, headers = {}) => ({ status, headers: { 'Content-Type': 'application/json', ...headers }, body: Buffer.from(JSON.stringify(body)) });
@@ -90,7 +91,7 @@ export function createFakeDrive({ thumbBase }) {
       const f = { id: `f${nextId++}`, ...b, parents: b.parents || [] };
       files.push(f);
       log.push(`FOLDER ${b.name}`);
-      return json({ id: f.id });
+      return json(meta(f));
     }
 
     const perm = path.match(/^\/drive\/v3\/files\/([^/]+)\/permissions(?:\/(.+))?$/);

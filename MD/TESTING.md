@@ -39,7 +39,7 @@ src/
     └── editor/__tests__/   createEditor behaviour, elements, constants
 ```
 
-**Current: 196 tests in 20 files, all passing.**
+**Current: 257 tests in 22 files, all passing.**
 
 ## End-to-End Run
 
@@ -51,12 +51,14 @@ src/
 | Visible Tab → Copy, Save | Real `captureVisibleTab`, Copy puts the screenshot on the real clipboard, upload reaches `Pramana/Screenshots`, no `alert()` |
 | Visible Tab → Edit | Editor tab, 9 tools, single Save button, first drag draws, inline text (no `prompt()`), blur over an API key, select/move, undo, survives reload, Copy image (clipboard holds the full-size PNG), Ctrl+S upload, pending image cleared |
 | Select Area | On-demand injection, Escape cancels, repeated injection opens one editor, crop size matches DPR, Copy image works on the web page, page CSS doesn't leak in, page doesn't receive editor keystrokes, save uploads |
+| Full Page | Long page with a fixed header, a sticky bar and a fixed button: the image is exactly the page's size, header at the top only, footer and button at the end only, page scrolled back and restored, tall image scrolls in the editor, toolbar counter cleared, upload |
 | Record Tab | Offscreen document, popup closes itself on start, reopened popup shows timer, Pause/Resume (badge `❚❚`, timer frozen, paused seconds left out of the video), review in Library, video size matches the tab, saved as a real MP4 with a known duration, upload to `Recordings`, badge cleared |
 | Record Screen | Popup closes itself, recorder window opens the share picker without a click (auto-selects the test tab) and minimizes once recording, badge and shortcut tooltip, Stop from the popup, recorded frame shows the page, window closes |
 | Switch tabs while recording | Recording continues; frames after switching still show the recorded tab, not the new one |
 | Close the recorded tab | Recording stops and what was captured opens for review; this one is recorded as WebM via the popup's Format menu |
 | Library | Thumbnails, sort, preview, rename, share/unshare, download, trash via in-page dialog |
 | Recorded video | Plays in preview |
+| Save folder | Create a folder from the Library (name with an apostrophe), popup names it, next capture lands in its `Screenshots`, switch back to `Pramana` |
 | Help page | Recording guide, Mac permission, Ubuntu commands with undo |
 | Signed out | Sign-in prompt instead of "No files" |
 | Microphone page | `E2E_FAKE_MEDIA=1` only (fake devices disable tab capture) |
@@ -66,6 +68,9 @@ src/
 These need a real signed-in Chrome profile and Google account:
 
 - [ ] Sign in with Google (consent screen) and sign out
+- [ ] Floating timer: Record Tab and Record Screen (a window) show a small always-on-top bar that is not in the video; with Entire screen the bar stays open and is in the video. The end-to-end run can't click the toolbar icon, and the bar only opens from that click, so this is checked by hand (or with a headed Chrome and a real pointer)
+- [ ] A full 30-minute recording: review opens, upload completes; try switching Wi-Fi off and on during the upload
+- [ ] Full Page on real sites: a long article, a web app with its own scrolling panel, a page with a cookie banner
 - [ ] Record Screen: pick a window and a whole screen (headless only covers picking a tab); stop from Chrome's "Stop sharing" bar; try closing the recorder window mid-recording
 - [ ] Record with microphone: first time opens the permission page; voice is in the recording
 - [ ] Upload a recording over 5 MB (resumable path) and confirm it plays from Drive

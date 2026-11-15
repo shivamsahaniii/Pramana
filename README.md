@@ -87,17 +87,21 @@ Copy `.env.example` to `.env` and set `VITE_GOOGLE_CLIENT_ID` before building; `
 | Google sign-in (`drive.file` scope only), token refresh after expiry | Working |
 | Visible Tab capture → preview → save or edit | Working |
 | Select Area capture (on-demand injection, Escape to cancel) | Working |
+| Full Page capture: scrolls the page and stitches every screen; fixed headers and footers appear once; also scrolls an inner panel when the page itself doesn't scroll | Working |
 | One object-based editor for both the page modal and the editor tab: 9 tools incl. Select, inline text, strong blur, undo/redo, shortcuts | Working |
 | Editor keeps the screenshot across a refresh | Working |
 | Copy image to clipboard (editor, popup preview, Library) | Working |
 | Help page (Library → Help): what each OS shows when recording, Mac permission, Ubuntu commands to remove the pop-ups (with undo) | Working |
 | Recording stays off screen: popup closes, recorder window minimizes; Pause/Resume/Stop from the toolbar icon or Alt+Shift+P / Alt+Shift+S | Working |
-| Tab recording in an offscreen document (keeps going after the popup closes and when you switch tabs), tab audio, optional microphone, 10-minute limit, recorded at the tab's own size | Working |
+| Tab recording in an offscreen document (keeps going after the popup closes and when you switch tabs), tab audio, optional microphone, 30-minute limit, recorded at the tab's own size | Working |
 | Screen/window/tab recording: Chrome's share picker opens straight away on Entire screen | Working |
 | Recording format: MP4 (default) or WebM, chosen in the popup | Working |
-| Recording review in the Library before saving; resumable upload with progress | Working |
+| Recording review in the Library before saving; resumable upload with progress that carries on after a dropped connection | Working |
 | Library: thumbnails, search, folder tabs, sort, image/video preview, rename, download, move to Drive trash | Working |
 | Share link (anyone with the link), copy link, stop sharing, open in Drive | Working |
+| Save folder: create or switch the Drive folder captures go to (Library → 📁); remembered by ID, so it can be moved or renamed in Drive | Working |
+| Floating timer with Pause/Stop (always-on-top window; not in tab or window recordings, visible in entire-screen recordings) | Working, needs a check on Windows and Mac |
+| Editor text size: A− / A+ and slider, also resizes text and emoji already placed | Working |
 | Sign-in prompt and error/retry states in the Library; unlimited-storage accounts | Working |
 | Tests: 162 unit/integration/component tests + headless end-to-end run of the built extension | Working |
 

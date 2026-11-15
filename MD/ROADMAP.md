@@ -119,10 +119,21 @@
 - [x] `pnpm package`: checked store zip without the dev `key`; version 1.0.0
 - [x] Publishing guide ([PUBLISHING.md](PUBLISHING.md)) and GitHub Actions CI
 - [x] User documentation: in-extension Help page
-- [ ] Manual checks on a real Google account, plus one Windows and one Mac machine
-- [ ] Developer account, store item, OAuth client for the store ID, consent screen in production
-- [ ] Store screenshots (1280×800) and promo tile (440×280)
-- [ ] Submit for review
+- [x] Developer account, store item, OAuth client for the store ID, consent screen in production
+- [x] Store screenshots (1280×800), promo tiles and promo video
+- [x] Submitted and approved: 1.0.0 is live on the Chrome Web Store (8 Nov 2026)
+
+### Phase 10 — User feedback (1.1.0, 1.1.1) 🟡 Submitted, in review
+From the first users' feedback.
+- [x] Full Page capture (scroll and stitch)
+- [x] Choose the Drive folder to save to (folders Pramana created; can be moved or renamed in Drive)
+- [x] Recording limit raised from 10 to 30 minutes; large uploads resume after a dropped connection
+- [x] Floating timer with Pause/Stop, small and in the top left corner; stays out of tab and window recordings, visible in entire-screen recordings
+- [x] Editor: clear text-size controls that also resize placed text; orange theme across popup, editor and Library
+- [x] 1.1.0 submitted for review (15 Nov 2026), tag `v1.1.0`
+- [x] 1.1.1 patch: the popup no longer flashes "Sign in with Google" while it checks the sign-in state (tag `v1.1.1`)
+- [ ] Submit 1.1.1 once 1.1.0 is live
+- [ ] Manual checks: floating timer on Windows and Mac; a full 30-minute recording and its upload
 
 ## What's Working Now
 
@@ -133,7 +144,7 @@
 | Select Area capture | ✅ | On-demand injection → overlay (Escape cancels) → crop → editor in shadow root |
 | Editor | ✅ | One object-based editor for page modal and editor tab; 9 tools; inline text; strong blur; shortcuts |
 | Upload to Drive | ✅ | Multipart ≤ 5 MB, resumable above |
-| Tab recording | ✅ | Offscreen document, tab audio, optional mic, 10-minute limit, review before saving |
+| Tab recording | ✅ | Offscreen document, tab audio, optional mic, 30-minute limit, review before saving |
 | Screen recording | ✅ | Recorder window opens Chrome's picker on Entire screen, then minimizes; pause/resume; shortcuts |
 | Library | ✅ | Sign-in gate, search, tabs, sort, thumbnails, image/video preview, rename, download, trash |
 | Copy image | ✅ | Editor, popup preview, Library |

@@ -13,7 +13,7 @@
 - **Record Tab** (that tab's video + audio at its own size, which keeps playing for the user; switching tabs keeps recording the original tab; closing it ends the recording) and **Record Screen** (screen/window/tab via Chrome's share picker in a small Pramana recorder window that must stay open)
 - Optional microphone, mixed into the recording; permission is asked once on a visible page
 - Runs in an offscreen document: keeps recording after the popup closes; toolbar badge shows REC; reopening the popup shows the timer
-- Maximum duration: **10 minutes**; stops automatically when sharing ends
+- Maximum duration: **30 minutes**; stops automatically when sharing ends
 - Output format chosen in the popup: **MP4** (default; H.264 with AAC audio where Chrome can encode it, otherwise Opus) or **WebM** (VP9/Opus). If Chrome can't record MP4 it records WebM and says so. MP3 isn't offered: it is audio only, and Chrome has no MP3 encoder
 - Finished recordings open in the Library to review, rename, save or discard
 
