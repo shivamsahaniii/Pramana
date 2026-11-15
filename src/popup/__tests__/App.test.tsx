@@ -168,7 +168,7 @@ describe('Popup App', () => {
   it('picks up a recording that is already running when reopened', async () => {
     handlers.GET_RECORDING_STATE = () => ({ success: true, recording: { startedAt: Date.now() - 65_000, source: 'tab' } });
     render(<App />);
-    await waitFor(() => expect(screen.getByRole('timer')).toHaveTextContent('● Recording 1:05 / 10:00'));
+    await waitFor(() => expect(screen.getByRole('timer')).toHaveTextContent('● Recording 1:05 / 30:00'));
   });
 
   it('pauses and resumes, leaving paused time out of the timer', async () => {
@@ -179,9 +179,9 @@ describe('Popup App', () => {
     render(<App />);
 
     fireEvent.click(await screen.findByText('Pause'));
-    await waitFor(() => expect(screen.getByRole('timer')).toHaveTextContent('❚❚ Paused 0:40 / 10:00'));
+    await waitFor(() => expect(screen.getByRole('timer')).toHaveTextContent('❚❚ Paused 0:40 / 30:00'));
     fireEvent.click(screen.getByText('Resume'));
-    await waitFor(() => expect(screen.getByRole('timer')).toHaveTextContent('● Recording 0:40 / 10:00'));
+    await waitFor(() => expect(screen.getByRole('timer')).toHaveTextContent('● Recording 0:40 / 30:00'));
     expect(screen.getByText('Pause')).toBeInTheDocument();
   });
 
@@ -223,9 +223,44 @@ describe('Popup App', () => {
     expect(chrome.storage.local.set).toHaveBeenCalledWith({ record_mic: true });
   });
 
+  it('hands a full-page capture to the page and closes', async () => {
+    (chrome.scripting.executeScript as any) = vi.fn().mockResolvedValue([]);
+    (chrome.tabs.sendMessage as any) = vi.fn().mockResolvedValue({ success: true });
+    render(<App />);
+
+    fireEvent.click(await screen.findByText('Full Page'));
+
+    await waitFor(() => expect(window.close).toHaveBeenCalled());
+    expect(chrome.scripting.executeScript).toHaveBeenCalledWith({ target: { tabId: 1 }, files: ['content.js'] });
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(1, { type: 'CAPTURE_FULL_PAGE' });
+  });
+
+  it('explains that browser pages cannot be captured in full', async () => {
+    (chrome.tabs.query as any) = vi.fn().mockResolvedValue([{ id: 1, url: 'chrome://settings' }]);
+    render(<App />);
+    fireEvent.click(await screen.findByText('Full Page'));
+    expect(await screen.findByText(/Cannot capture on browser pages/)).toBeInTheDocument();
+    expect(window.close).not.toHaveBeenCalled();
+  });
+
+  it('shows the Drive folder captures are saved to and opens the folder chooser', async () => {
+    (chrome.storage.local.get as any) = vi.fn().mockResolvedValue({ drive_save_folder: { id: 'f9', name: 'Client audit' } });
+    render(<App />);
+
+    fireEvent.click(await screen.findByText('📁 Saves to Client audit'));
+
+    expect(chrome.tabs.create).toHaveBeenCalledWith({ url: 'chrome-extension://test/src/dashboard/index.html?folder' });
+  });
+
+  it('says Pramana when no folder was chosen', async () => {
+    render(<App />);
+    expect(await screen.findByText('📁 Saves to Pramana')).toBeInTheDocument();
+  });
+
   it('shows the sign-in screen when signed out', async () => {
     handlers.AUTH_STATUS = () => ({ signedIn: false });
     render(<App />);
     expect(await screen.findByText('Sign in with Google')).toBeInTheDocument();
   });
+
 });

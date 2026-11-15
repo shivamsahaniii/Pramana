@@ -1,7 +1,7 @@
 /// <reference types="chrome" />
 
 import { handleAuth, checkAuthStatus, getToken } from './auth';
-import { handleCapture, handleCaptureArea } from './capture';
+import { handleCapture, handleCaptureArea, handleCaptureDone, handleCaptureVisible } from './capture';
 import { drive, handleUpload } from './storage';
 import {
   getRecordingState,
@@ -59,6 +59,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'CAPTURE_AREA':
         return await handleCaptureArea(message.payload, sender);
 
+      case 'CAPTURE_VISIBLE':
+        return await handleCaptureVisible(message.payload, sender);
+
+      case 'CAPTURE_DONE':
+        return await handleCaptureDone();
+
       case 'UPLOAD_FILE':
         return await handleUpload(message.payload);
 
@@ -84,6 +90,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       case 'RESUME_RECORDING':
         return await resumeRecording();
+
+      case 'TOGGLE_PAUSE_RECORDING':
+        return await togglePauseRecording();
 
       case 'GET_RECORDING_STATE':
         return { success: true, ...(await getRecordingState()) };

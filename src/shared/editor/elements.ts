@@ -179,7 +179,7 @@ export function renderSelection(ctx: CanvasRenderingContext2D, el: EditorElement
   const pad = 6 * scale;
   const b = elementBounds(el);
   ctx.save();
-  ctx.strokeStyle = '#1f6feb';
+  ctx.strokeStyle = '#f26b1d';
   ctx.lineWidth = 2 * scale;
   ctx.setLineDash([6 * scale, 4 * scale]);
   ctx.strokeRect(b.x - pad, b.y - pad, b.width + pad * 2, b.height + pad * 2);

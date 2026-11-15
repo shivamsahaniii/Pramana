@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleCapture, handleCaptureArea } from '../capture';
+import { handleCapture, handleCaptureArea, handleCaptureDone, handleCaptureVisible } from '../capture';
 
 describe('handleCapture', () => {
   beforeEach(() => {
@@ -68,5 +68,45 @@ describe('handleCaptureArea', () => {
     const result = await handleCaptureArea(area, sender);
     expect(result.success).toBe(false);
     expect(result.error).toContain('Capture failed');
+  });
+});
+
+describe('full-page capture screens', () => {
+  const sender = { tab: { id: 1, windowId: 5 } } as chrome.runtime.MessageSender;
+  const c = () => globalThis.chrome as any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    c().tabs.captureVisibleTab = vi.fn().mockResolvedValue('data:image/png;base64,SCREEN');
+    c().storage.session.get = vi.fn().mockResolvedValue({});
+  });
+
+  it('returns each screen and counts them on the toolbar icon', async () => {
+    expect(await handleCaptureVisible({ step: 2, steps: 5 }, sender)).toEqual({ success: true, base64: 'SCREEN' });
+    expect(c().tabs.captureVisibleTab).toHaveBeenCalledWith(5, { format: 'png' });
+    expect(c().action.setBadgeText).toHaveBeenCalledWith({ text: '2/5' });
+  });
+
+  it('shows no count for a page that fits in one screen', async () => {
+    await handleCaptureVisible({ step: 1, steps: 1 }, sender);
+    expect(c().action.setBadgeText).not.toHaveBeenCalled();
+  });
+
+  it('leaves the recording badge alone while a recording is running', async () => {
+    c().storage.session.get = vi.fn().mockResolvedValue({ recording_state: { startedAt: 1, source: 'tab' } });
+    await handleCaptureVisible({ step: 2, steps: 5 }, sender);
+    await handleCaptureDone();
+    expect(c().action.setBadgeText).not.toHaveBeenCalled();
+  });
+
+  it('clears the count when the capture ends', async () => {
+    await handleCaptureDone();
+    expect(c().action.setBadgeText).toHaveBeenCalledWith({ text: '' });
+  });
+
+  it("passes on Chrome's too-many-captures error so the page can wait and retry", async () => {
+    c().tabs.captureVisibleTab = vi.fn().mockRejectedValue(new Error('This request exceeds the MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND quota.'));
+    const result = await handleCaptureVisible({ step: 1, steps: 3 }, sender);
+    expect(result).toEqual({ success: false, error: expect.stringContaining('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') });
   });
 });

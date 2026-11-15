@@ -1,5 +1,7 @@
 /// <reference types="chrome" />
 
+import { SAVE_FOLDER_KEY } from '../shared/drive';
+
 export async function handleAuth(payload: { type: string }) {
   if (payload.type === 'LOGIN') {
     try {
@@ -27,7 +29,8 @@ export async function handleAuth(payload: { type: string }) {
       chrome.identity.removeCachedAuthToken({ token: data.auth_token });
     }
     await chrome.identity.clearAllCachedAuthTokens();
-    await chrome.storage.local.remove(['auth_token', 'is_signed_in', 'user_email', 'user_name']);
+    // The chosen save folder belongs to this Google account, so it is forgotten too
+    await chrome.storage.local.remove(['auth_token', 'is_signed_in', 'user_email', 'user_name', SAVE_FOLDER_KEY]);
     return { success: true };
   }
   return { success: false, error: 'Unknown auth action' };

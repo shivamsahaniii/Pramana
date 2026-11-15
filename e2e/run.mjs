@@ -67,6 +67,7 @@ const server = http
       return res.end(data);
     }
     res.writeHead(200, { 'Content-Type': 'text/html' });
+    if (req.url.startsWith('/long')) return res.end(readFileSync(join(HERE, 'long.html')));
     if (req.url.startsWith('/other')) return res.end('<title>Other tab</title><body style="background:#000;margin:0"><h1 style="color:#fff">Other tab</h1></body>');
     res.end(readFileSync(join(HERE, 'page.html')));
   })
@@ -500,6 +501,48 @@ await scenario('Select Area on a web page: Escape cancels; drag opens isolated e
   writeFileSync(join(SHOTS, '08-inline-upload.png'), drive.files.at(-1).data);
 });
 
+await scenario('Full Page: scrolls a long page, keeps the fixed header and footer to one each, opens the editor, saves', async () => {
+  const long = await open(`${WEB}/long`);
+  const s = await openPopup();
+  const tab = await evaluate(s, `chrome.tabs.realQuery({ url: '${WEB}/long*' }).then(([t]) => ({ id: t.id, windowId: t.windowId, url: t.url }))`);
+  await evaluate(s, `chrome.tabs.query = async () => [${JSON.stringify(tab)}]; true`);
+  await evaluate(long, `scrollTo(0, 300); true`);
+  await click(s, 'button', 'Full Page');
+  const host = `document.getElementById('pramana-editor-host')?.shadowRoot`;
+  await waitFor(() => evaluate(long, `${host}?.querySelector('canvas')?.width > 0`), { what: 'editor with the stitched page', timeout: 30000 });
+
+  const info = await evaluate(long, `(() => {
+    const c = ${host}.querySelector('canvas');
+    const px = (x, y) => [...c.getContext('2d').getImageData(Math.round(x), Math.round(y), 1, 1).data.slice(0, 3)].join(',');
+    const d = devicePixelRatio, vh = innerHeight * d;
+    const stage = ${host}.querySelector('.pe-stage');
+    return {
+      size: [c.width, c.height], page: [Math.round(innerWidth * d), Math.round(document.documentElement.scrollHeight * d)],
+      top: px(10, 20 * d), secondScreen: px(10, vh + 20 * d), thirdScreen: px(10, 2 * vh + 20 * d), bottom: px(10, c.height - 20 * d),
+      chatAtEnd: px(c.width - 52 * d, c.height - 52 * d), chatInFirstScreen: px(c.width - 52 * d, vh - 52 * d),
+      scrollY, sticky: getComputedStyle(document.querySelector('.sticky')).position, header: getComputedStyle(document.querySelector('header')).visibility,
+      scrolls: stage.scrollHeight > stage.clientHeight,
+    };
+  })()`);
+  console.log(`      ${info.size.join('x')} image for a ${info.page.join('x')} page`);
+  const HEADER = '15,23,42', CHAT = '22,163,74';
+  assert(info.size[0] === info.page[0] && Math.abs(info.size[1] - info.page[1]) <= 2, `image ${info.size} is not the page ${info.page}`);
+  assert(info.top === HEADER, `no header at the top: ${info.top}`);
+  assert(info.secondScreen !== HEADER && info.thirdScreen !== HEADER, `fixed header repeats down the image: ${info.secondScreen} / ${info.thirdScreen}`);
+  assert(info.bottom === HEADER, `footer is not at the end: ${info.bottom}`);
+  assert(info.chatAtEnd === CHAT && info.chatInFirstScreen !== CHAT, `fixed button should be at the end only: end ${info.chatAtEnd}, first screen ${info.chatInFirstScreen}`);
+  assert(info.scrollY === 300 && info.sticky === 'sticky' && info.header === 'visible', `page not put back: ${JSON.stringify(info)}`);
+  assert(info.scrolls, 'a tall capture should scroll in the editor instead of shrinking to fit');
+  assert((await evaluate(s, 'chrome.action.getBadgeText({})')) === '', 'screen counter left on the toolbar icon');
+  await shot(long, '08b-full-page-editor');
+
+  const before = uploads().length;
+  await click(long, 'button', 'Save to Drive');
+  await waitFor(() => uploads().length === before + 1, { what: 'full-page upload', timeout: 15000 });
+  writeFileSync(join(SHOTS, '08c-full-page.png'), drive.files.at(-1).data);
+  await cdp.send('Target.closeTarget', { targetId: sessions.get(long).targetId });
+});
+
 await scenario('Record Tab: popup closes itself, pause/resume (paused time left out), review in Library, save to Drive', async () => {
   if (FAKE_MEDIA) throw new Skip('tab capture does not work with fake media devices');
   const s = await openPopup();
@@ -693,6 +736,34 @@ await scenario('Library: recorded video plays in the preview', async () => {
   await click(lib, '.file-card', video.name);
   await waitFor(() => evaluate(lib, `(document.querySelector('.preview-modal video')?.readyState || 0) >= 1`), { what: 'video to load' });
   await shot(lib, '15-video-preview');
+});
+
+await scenario('Save folder: create one from the Library, captures go into it, switch back', async () => {
+  const lib = await open(`${EXT_URL}/src/dashboard/index.html?folder`);
+  await waitFor(async () => (await textOf(lib)).includes('Saving here'), { what: 'folder chooser' });
+  await shot(lib, '15b-save-folder');
+  await evaluate(lib, `document.querySelector('input[aria-label="New folder name"]').focus(); true`);
+  await cdp.send('Input.insertText', { text: "Case 42 (Tom's)" }, lib);
+  await click(lib, 'button', 'Create and use');
+  const folder = await waitFor(() => findFile((f) => f.name === "Case 42 (Tom's)"), { what: 'folder in Drive' });
+  assert(folder.parents.length === 0, 'the new folder should be in My Drive, not inside another folder');
+  await waitFor(async () => (await textOf(lib)).includes('No files yet'), { what: 'Library showing the new, empty folder' });
+
+  const s = await openPopup();
+  await waitFor(async () => (await textOf(s)).includes("Saves to Case 42 (Tom's)"), { what: 'popup naming the folder' });
+  await click(s, 'button', 'Visible Tab');
+  const before = uploads().length;
+  await click(s, 'button', 'Save to Drive');
+  await waitFor(() => uploads().length === before + 1, { what: 'upload into the new folder' });
+  const parent = findFile((f) => f.id === drive.files.at(-1).parents[0]);
+  assert(parent?.name === 'Screenshots' && parent.parents[0] === folder.id, `saved into ${parent?.name} of ${parent?.parents}`);
+
+  // Back to the default folder, whose files the Library shows again
+  await click(lib, '.folder-button');
+  await click(lib, '.folder-option', 'Pramana');
+  await waitFor(async () => (await evaluate(lib, `chrome.storage.local.get('drive_save_folder').then((d) => d.drive_save_folder?.id)`)) === 'root', { what: 'switch back' });
+  await waitFor(async () => (await evaluate(lib, 'document.querySelectorAll(".file-card").length')) > 0, { what: 'default folder files' });
+  await cdp.send('Target.closeTarget', { targetId: sessions.get(lib).targetId });
 });
 
 await scenario('Help page: recording guide, Mac permission, Ubuntu commands with undo', async () => {

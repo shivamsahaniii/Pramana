@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPageDriveClient } from '../shared/drive';
-import type { DriveFile, StorageQuota } from '../shared/drive';
+import type { DriveFile, DriveFolder, StorageQuota } from '../shared/drive';
 import { getPendingRecording } from '../shared/recordingStore';
 import type { PendingRecording } from '../shared/recordingStore';
 import { StorageMeter } from '../shared/StorageMeter';
@@ -11,6 +11,8 @@ import { PreviewModal } from './PreviewModal';
 import { RecordingReview } from './RecordingReview';
 import { MicPermission } from './MicPermission';
 import { Help } from './Help';
+import { SaveFolderDialog } from './SaveFolderDialog';
+import { showToast } from '../shared/toast';
 
 const drive = createPageDriveClient();
 
@@ -47,6 +49,9 @@ function Library() {
   const [quota, setQuota] = useState<StorageQuota | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [pendingRecording, setPendingRecording] = useState<PendingRecording | null>(null);
+  const [saveFolder, setSaveFolder] = useState<DriveFolder | null>(null);
+  // ?folder (from the popup) opens the save-folder dialog straight away
+  const [choosingFolder, setChoosingFolder] = useState(() => new URLSearchParams(window.location.search).has('folder'));
 
   const loadFiles = useCallback(async () => {
     setLoading(true);
@@ -59,6 +64,7 @@ function Library() {
       setLoading(false);
     }
     drive.getQuota().then(setQuota).catch(() => {});
+    drive.getSaveFolder().then(setSaveFolder).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -123,6 +129,9 @@ function Library() {
               <StorageMeter quota={quota} />
             </div>
           )}
+          <button className="btn-ghost folder-button" onClick={() => setChoosingFolder(true)} title="Choose where screenshots and recordings are saved">
+            📁 <span className="folder-button-name">{saveFolder?.name || 'Save folder'}</span>
+          </button>
           <a className="btn-ghost" href="?help">
             Help
           </a>
@@ -194,6 +203,20 @@ function Library() {
             setPreviewId(null);
           }}
           onClose={() => setPreviewId(null)}
+        />
+      )}
+
+      {choosingFolder && (
+        <SaveFolderDialog
+          drive={drive}
+          current={saveFolder}
+          onClose={() => setChoosingFolder(false)}
+          onChanged={(folder) => {
+            setChoosingFolder(false);
+            setSaveFolder(folder);
+            showToast(`Saving to “${folder.name}” from now on`, 'success');
+            loadFiles();
+          }}
         />
       )}
 

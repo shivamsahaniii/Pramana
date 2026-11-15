@@ -40,6 +40,26 @@ describe('background recording control', () => {
       expect(c().action.setBadgeText).toHaveBeenCalledWith({ text: 'REC' });
     });
 
+    it('opens a small window for the floating controls, without taking focus from the popup', async () => {
+      await startRecording({ source: 'tab', mic: false, tabId: 7, float: true });
+
+      expect(c().windows.create).toHaveBeenCalledWith(
+        expect.objectContaining({ url: `chrome-extension://test/src/recorder/index.html?mode=tab&float=1&max=${MAX_RECORDING_MS}`, focused: false })
+      );
+      expect(c().storage.session.set).toHaveBeenCalledWith({ recorder_window: 99 });
+    });
+
+    it('opens no extra window when floating controls are off', async () => {
+      await startRecording({ source: 'tab', mic: false, tabId: 7 });
+      expect(c().windows.create).not.toHaveBeenCalled();
+    });
+
+    it('still records when the floating-controls window cannot open', async () => {
+      c().windows.create = vi.fn().mockRejectedValue(new Error('No window'));
+      expect((await startRecording({ source: 'tab', mic: false, tabId: 7, float: true })).success).toBe(true);
+      c().windows.create = vi.fn().mockResolvedValue({ id: 99 });
+    });
+
     it('reuses an existing offscreen document', async () => {
       c().runtime.getContexts = vi.fn().mockResolvedValue([{ contextType: 'OFFSCREEN_DOCUMENT' }]);
       await startRecording({ source: 'tab', mic: false, tabId: 7 });
@@ -70,6 +90,17 @@ describe('background recording control', () => {
       expect(c().storage.session.set).toHaveBeenCalledWith({ recorder_window: 99 });
       expect(c().offscreen.createDocument).not.toHaveBeenCalled();
       expect(c().action.setBadgeText).not.toHaveBeenCalled();
+    });
+
+    it('opens the recorder window unfocused when it is to receive the popup\'s click for floating controls', async () => {
+      await startRecording({ source: 'screen', mic: false, float: true });
+      expect(c().windows.create).toHaveBeenCalledWith(
+        expect.objectContaining({ url: `chrome-extension://test/src/recorder/index.html?mic=0&max=${MAX_RECORDING_MS}&format=mp4&float=1`, focused: false })
+      );
+    });
+
+    it('allows 30 minutes', () => {
+      expect(MAX_RECORDING_MS).toBe(30 * 60 * 1000);
     });
 
     it('passes the chosen format to the recorder window', async () => {
